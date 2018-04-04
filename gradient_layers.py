@@ -56,10 +56,9 @@ class InputGradientIntegrated(InputGradient):
     def call(self, inputs, mask = None):
         output = 0
         for alpha in range(self.intervals):
-            inputs_ratio = inputs * (alpha / self.intervals)
-            output += self._call(inputs_ratio, mask = mask) / self.intervals
+            output += self._call(inputs * (alpha / self.intervals), mask = mask)
 
-        return self._finalize(inputs, output)
+        return self._finalize(inputs, output / self.intervals)
 
 class InputGradientNoisy(InputGradient):
     def __init__(self, layer, noise_ratio, samples, **kwargs):
@@ -83,6 +82,6 @@ class InputGradientNoisy(InputGradient):
             noise = K.map_fn(lambda i:K.random_normal(batchshape, stddev = tmpdiff[i]),
                     K.arange(0, batchsize), dtype = K.dtype(inputs))
             
-            output += self._call(inputs + noise, mask = mask) / self.samples
+            output += self._call(inputs + noise, mask = mask)
 
-        return self._finalize(inputs, output)
+        return self._finalize(inputs, output / self.samples)
