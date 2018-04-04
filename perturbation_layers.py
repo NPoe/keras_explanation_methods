@@ -2,7 +2,7 @@ import keras.backend as K
 from explanation_layers import ExplanationLayer
 
 class InputPerturbation(ExplanationLayer):
-    def __init__(self, layer, size, axis, **kwargs):
+    def __init__(self, layer, size = 1, axis = 1, **kwargs):
         super(InputPerturbation, self).__init__(layer, **kwargs)
 
         if size < 1:

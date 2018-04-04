@@ -1,5 +1,5 @@
 import keras.backend as K
-from explanation_layer import ExplanationLayer
+from explanation_layers import ExplanationLayer
 
 class InputGradient(ExplanationLayer):
     def __init__(self, layer, **kwargs):
