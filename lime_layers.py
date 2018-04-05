@@ -62,7 +62,7 @@ class LIME(ExplanationLayer):
 
 class StandardLIME(LIME):
     def __init__(self, layer, samples, size, axis, **kwargs):
-        super(StandardLIME, self).__init_(layer, samples, **kwargs)
+        super(StandardLIME, self).__init__(layer, samples, **kwargs)
         self.axis = axis
         self.size = size
 
@@ -77,6 +77,7 @@ class StandardLIME(LIME):
         
         inputs_padded = self._pad(inputs) 
         inputs_perm = K.permute_dimensions(inputs_padded, pattern)
+
         if mask and self.axis <= 1:
             mask_padded = self._pad(mask)
             mask_perm = K.permute_dimensions(mask_padded, pattern)
@@ -85,28 +86,39 @@ class StandardLIME(LIME):
         timesteps = K.shape(inputs_padded)[self.axis]
         
         def sample_positions(_):
-            return K.random_uniform(shape = (self.size, batchsize), minval=0, maxval=timesteps-self.size, dtype = "int32")
+            return K.random_uniform(shape = (self.size,), minval=0, maxval=timesteps, dtype = "int32")
 
-        positions = K.map_fn(get_sample, K.arange(0, self.samples), dtype = "int32")
-        # (self.samples, self.size, batchsize)
+        positions = K.map_fn(sample_positions, K.arange(0, self.samples), dtype = "int32")
 
-        def sample_sample(positions):
-            return K.permute_dimensions(inputs_perm[positions], pattern)
+        def sample_sample(pos):
+            tmp = K.gather(inputs_perm, pos)
+            return K.permute_dimensions(tmp, pattern)
             
-        samples = [K.map_fn(sample_sample, positions, dtype = K.dtype(inputs))]
+        samples = K.map_fn(sample_sample, positions, dtype = K.dtype(inputs))
+        samples = [K.permute_dimensions(samples, [1,0] + list(range(2, K.ndim(samples))))]
 
         def sample_binary(positions):
-            tmp = K.sum(K.one_hot(positions, timesteps), axis = 0) # count times every 
-            tmp = K.cast(K.cast(tmp, "bool"), "int32") # avoid counts > 0
+            tmp = K.one_hot(positions, timesteps)
+            tmp = K.sum(tmp, axis = 0)
+            tmp = K.cast(K.cast(tmp, "bool"), K.dtype(inputs)) # avoid counts > 1
+            tmp = K.expand_dims(tmp, 0) # reintroduce batch size
+            tmp = K.tile(tmp, (batchsize,) + tuple([1] * (K.ndim(tmp)-1)))
+            # (batchsize, timesteps) 
             return tmp
+
+
         
-        binaries = [K.map_fn(sample_binary, positions, dtype = K.dtype(inputs))]
+        binaries = K.map_fn(sample_binary, positions, dtype = K.dtype(inputs))
+        # (samples, batchsize, timesteps)
+        binaries = [K.permute_dimensions(binaries, [1,0,2])]
+        # (batchsize, samples, timesteps)
 
         if mask and self.axis <= 1:
             def sample_mask(positions):
                 return K.permute_dimensions(mask_perm[positions], pattern)
 
-            masks = [K.map_fn(sample_mask, positions, dtype = K.dtype(mask))]
+            masks = K.map_fn(sample_mask, positions, dtype = K.dtype(mask))
+            masks = [K.permute_dimensions(masks, [1,0,2])]
 
         else:
             masks = []

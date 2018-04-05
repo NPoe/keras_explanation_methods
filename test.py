@@ -2,10 +2,11 @@ def test():
     
     import numpy as np
     np.random.seed(123)
+
     from keras.models import Sequential
     from keras.layers import GlobalMaxPooling1D, Conv1D, Lambda, Embedding, LSTM, GRU
 
-    from lime_layers import LIMSSE 
+    from lime_layers import LIMSSE, StandardLIME
     from gradient_layers import InputGradient, InputGradientNoisy, InputGradientIntegrated
     from perturbation_layers import InputOmission1D, InputOcclusion1D
 
@@ -22,7 +23,7 @@ def test():
             print("-------------------")
 
 
-    inp = np.array([[1,2,3], [1,0,0], [1,2,0], [3,0,0]])
+    inp = np.array([[1,2,3], [1,0,0], [0,2,1], [3,0,0]])
 
     HIDDEN_SIZE = 5
     EMB_SIZE = 9
@@ -35,14 +36,22 @@ def test():
     gru = GRU(units=5)
   
     outer2 = Sequential([embm, gru])    
-    lime = LIMSSE(outer2, samples=10, input_shape = (None,))
+    lime = LIMSSE(outer2, samples=20, input_shape = (None,))
     model = Sequential([lime])
     out = model.predict_on_batch(inp)
     check_equal(out.shape, (4,3,HIDDEN_SIZE))
-    tmp1 = abs(out).sum(axis = -1) > 0.0001
-    tmp2 = inp > 0.0001
+    tmp1 = abs(out).sum(axis = -1) > 0.01
+    tmp2 = inp > 0.0
     # not a real test, but check that masked values from inp (0) have relevances close to zero
     # if they do, assume this works
+    check_close(tmp1, tmp2)
+    
+    lime = StandardLIME(outer2, samples=50, axis=1, size=2, input_shape = (None,))
+    model = Sequential([lime])
+    out = model.predict_on_batch(inp)
+    check_equal(out.shape, (4,3,HIDDEN_SIZE))
+    tmp1 = abs(out).sum(axis = -1) > 0.01
+    tmp2 = inp > 0.0
     check_close(tmp1, tmp2)
 
     model = Sequential([emb, InputGradient(layer = inner, input_shape = (None, 9))])
