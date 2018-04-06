@@ -40,19 +40,18 @@ def test():
     model = Sequential([lime])
     out = model.predict_on_batch(inp)
     check_equal(out.shape, (4,3,HIDDEN_SIZE))
-    tmp1 = abs(out).sum(axis = -1) > 0.01
-    tmp2 = inp > 0.0
-    # not a real test, but check that masked values from inp (0) have relevances close to zero
-    # if they do, assume this works
-    check_close(tmp1, tmp2)
+    
+    masked = (abs(out).sum(axis=-1)*(inp==0.0)).sum()
+    unmasked = (abs(out).sum(axis=-1)*(inp!=0.0)).sum()
+    assert(masked*10<unmasked)
     
     lime = StandardLIME(outer2, samples=50, axis=1, size=2, input_shape = (None,))
     model = Sequential([lime])
     out = model.predict_on_batch(inp)
     check_equal(out.shape, (4,3,HIDDEN_SIZE))
-    tmp1 = abs(out).sum(axis = -1) > 0.01
-    tmp2 = inp > 0.0
-    check_close(tmp1, tmp2)
+    masked = (abs(out).sum(axis=-1)*(inp==0.0)).sum()
+    unmasked = (abs(out).sum(axis=-1)*(inp!=0.0)).sum()
+    assert(masked*10<unmasked)
 
     model = Sequential([emb, InputGradient(layer = inner, input_shape = (None, 9))])
     out = model.predict_on_batch(inp)
