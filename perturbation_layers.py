@@ -11,10 +11,13 @@ class InputPerturbation(ExplanationLayer):
         self.size = size
         self.axis = axis
 
-
 class InputPerturbation1D(InputPerturbation):
     def compute_output_shape(self, input_shape):
-        return input_shape[:2] + \
+        if input_shape[self.axis] == None:
+            x = None
+        else:
+            x = input_shape[self.axis] - self.size + 1
+        return input_shape[:1] + (x,) + \
                 self.layer.compute_output_shape(self._compute_input_shape_int(input_shape))[1:]
    
     def call(self, inputs, mask = None):
@@ -43,11 +46,9 @@ class InputPerturbation1D(InputPerturbation):
                 return self._perturb(inputs, start), [start+1]
 
             _, _inputs, _ = K.rnn(_step, timesteps, initial_states = [0], constants = [False])
-
             # batchsize, timesteps - size + 1, _timesteps, [input_shape]
             # omission: _timesteps = timesteps - size
             # occlusion: _timesteps = timesteps
-
             _input_shape = self._compute_input_shape(shape)
             _reshape = K.concatenate([- K.ones((1,), dtype = K.dtype(_input_shape)), _input_shape[1:]], axis = 0)
             _inputs = K.reshape(_inputs, _reshape)
@@ -56,7 +57,7 @@ class InputPerturbation1D(InputPerturbation):
             _inputs._uses_learning_phase = inputs._uses_learning_phase
             _inputs._keras_shape = (None, None) + int_shape[2:]
 
-            if not mask is None:
+            if self.axis <= 1 and not mask is None:
                 _, _mask, _ = K.rnn(_step, timesteps, initial_states = [0], constants = [True])
                 _mask_reshape = K.concatenate([- K.ones((1,), dtype = K.dtype(_input_shape)), _input_shape[1:2]], axis = 0)
                 _mask = K.reshape(_mask, _mask_reshape)
@@ -64,10 +65,8 @@ class InputPerturbation1D(InputPerturbation):
             else:
                 _output = self.layer.call(_inputs)
                 # (batchsize * (timesteps - size + 1), [output_shape])
-
-            
+           
             output_shape = self.compute_output_shape(int_shape)
-
             if output_shape[1] is None:
                 if output_shape[2] is None:
                     dummy_input = self._perturb(inputs, 0)
@@ -91,9 +90,10 @@ class InputOmission1D(InputPerturbation1D):
 
     def _perturb(self, x, start):
         _x = x
-        _x = K.permute_dimensions(_x, [self.axis] + [i if i != self.axis else 0 for i in range(1, K.ndim(x))])
+        pattern = [self.axis] + [i if i != self.axis else 0 for i in range(1, K.ndim(x))]
+        _x = K.permute_dimensions(_x, pattern)
         _x = K.concatenate([_x[:start], _x[start+self.size:]], axis = 0)
-        _x = K.permute_dimensions(_x, [self.axis] + [i if i != self.axis else 0 for i in range(1, K.ndim(x))])
+        _x = K.permute_dimensions(_x, pattern)
         
         _shape = K.int_shape(x)
         if _shape[self.axis]:
@@ -118,9 +118,10 @@ class InputOcclusion1D(InputPerturbation1D):
 
     def _perturb(self, x, start):
         _x = x
-        _x = K.permute_dimensions(_x, [self.axis] + [i if i != self.axis else 0 for i in range(1, K.ndim(x))])
+        pattern = [self.axis] + [i if i != self.axis else 0 for i in range(1, K.ndim(x))]
+        _x = K.permute_dimensions(_x, pattern)
         _x = K.concatenate([_x[:start], K.zeros_like(_x[:self.size]), _x[start+self.size:]], axis = 0)
-        _x = K.permute_dimensions(_x, [self.axis] + [i if i != self.axis else 0 for i in range(1, K.ndim(x))])
+        _x = K.permute_dimensions(_x, pattern)
 
         _x._keras_shape = x._keras_shape
         _x._uses_learning_phase = x._uses_learning_phase

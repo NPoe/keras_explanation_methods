@@ -30,11 +30,11 @@ def test():
 
     emb = Embedding(input_dim = inp.max()+1, output_dim = EMB_SIZE, mask_zero = False)
     embm = Embedding(input_dim = inp.max()+1, output_dim = EMB_SIZE, mask_zero = True)
-    conv = Conv1D(kernel_size = HIDDEN_SIZE, filters = HIDDEN_SIZE, padding="same", input_shape = (None, 9))
+    conv = Conv1D(kernel_size = HIDDEN_SIZE, filters = HIDDEN_SIZE, padding="same", input_shape = (None, EMB_SIZE))
     inner = Sequential([conv, GlobalMaxPooling1D()])
-    lstm = LSTM(units=5)
-    gru = GRU(units=5)
-  
+    lstm = LSTM(units=5, input_shape = (None, EMB_SIZE))
+    gru = GRU(units=5, input_shape = (None, EMB_SIZE))
+
     outer2 = Sequential([embm, gru])    
     lime = LIMSSE(outer2, samples=20, input_shape = (None,))
     model = Sequential([lime])
@@ -80,6 +80,28 @@ def test():
     out = model.predict_on_batch(inp)
     check_equal(out.shape, (4,3,EMB_SIZE,HIDDEN_SIZE))
     
+    
+    inner_lstm = Sequential([lstm])
+    model = Sequential([emb, InputOcclusion1D(layer = inner_lstm, input_shape = (None, EMB_SIZE), axis = 1, size = 1)])
+    out = model.predict_on_batch(inp)
+    check_equal(out.shape, (4,3,HIDDEN_SIZE))
+    
+    model3 = Sequential([emb])
+    model4 = Sequential([inner_lstm])
+    inp2 = model3.predict_on_batch(inp)
+    inp2[:,0] = 0
+    check_close(out[:,0], model4.predict_on_batch(inp2))
+    
+    model = Sequential([emb, InputOcclusion1D(layer = inner_lstm, input_shape = (None, EMB_SIZE), axis = 2, size = 1)])
+    out = model.predict_on_batch(inp)
+    check_equal(out.shape, (4,EMB_SIZE,HIDDEN_SIZE))
+    
+    model3 = Sequential([emb])
+    model4 = Sequential([inner_lstm])
+    inp2 = model3.predict_on_batch(inp)
+    inp2[:,:,0] = 0
+    check_close(out[:,0], model4.predict_on_batch(inp2))
+
     model = Sequential([emb, InputOmission1D(layer = inner, input_shape = (None, EMB_SIZE))])
     out = model.predict_on_batch(inp)
     check_equal(out.shape, (4,3,HIDDEN_SIZE))
@@ -121,9 +143,6 @@ def test():
     out = model.predict_on_batch(inp)
     check_equal(out.shape, (4,2,HIDDEN_SIZE))
     
-    model = Sequential([embm, InputOcclusion1D(layer = lstm, axis = 2)])
-    out = model.predict_on_batch(inp)
-    check_equal(out.shape, (4,EMB_SIZE,HIDDEN_SIZE))
 
     print("Checks done")
 
