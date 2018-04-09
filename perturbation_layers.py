@@ -7,10 +7,14 @@ class InputPerturbation(ExplanationLayer):
 
         if size < 1:
             raise Exception("size must be > 0")
+        
+        if not mode in ("minus", "ratio", None):
+            raise Exception("mode must be one of 'minus', 'ratio', None")
 
         self.size = size
         self.axis = axis
         self.mode = mode
+
 
 class InputPerturbation1D(InputPerturbation):
     def compute_output_shape(self, input_shape):
@@ -89,6 +93,8 @@ class InputPerturbation1D(InputPerturbation):
                 orig_output = K.expand_dims(orig_output, 1)
                 if self.mode == "minus":
                     return orig_output - output
+                elif self.mode == "ratio":
+                    return orig_output / output
             return output
     
 class InputOmission1D(InputPerturbation1D):
@@ -102,6 +108,9 @@ class InputOmission1D(InputPerturbation1D):
     # Arguments
         layer: wrapped layer
         size: n-gram length
+        mode: If None, the result is the perturbed output. If 'minus', the
+        result is the original output minus the perturbed output. If 'ratio',
+        the result is the original output divided by the perturbed output.
     """
     def __init__(self, layer, size=1, **kwargs):
         super(InputOmission1D, self).__init__(layer, size, axis=1, **kwargs)
@@ -151,6 +160,9 @@ class InputOcclusion1D(InputPerturbation1D):
         layer: wrapped layer
         size: n-gram length
         axis: axis to occlude over
+        mode: If None, the result is the perturbed output. If 'minus', the
+        result is the original output minus the perturbed output. If 'ratio',
+        the result is the original output divided by the perturbed output.
     """
     def _perturb_mask(self, mask, start):
         return mask
