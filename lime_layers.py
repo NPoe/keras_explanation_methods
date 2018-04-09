@@ -21,18 +21,27 @@ class LIME(ExplanationLayer):
         minus_one = (-1) * K.ones((1,), dtype = K.dtype(K.shape(inputs)))
 
         def flatten_01(x):
-            return K.reshape(x, K.concatenate([minus_one, K.shape(x)[2:]]))
+            tmp = K.reshape(x, K.concatenate([minus_one, K.shape(x)[2:]]))
+            shape = K.int_shape(x)
+            if shape[0] and shape[1]:
+                tmp._keras_shape = (shape[0] * shape[1],) + shape[2:]
+            else:
+                tmp._keras_shape = (None,) + shape[2:]
+            tmp._uses_learning_phase = x._uses_learning_phase
+            return tmp
 
         samples_by_size_flat = [flatten_01(_x) for _x in samples_by_size]
         # (batchsize * samples, timesteps...)
+        
 
-        if mask:
+        if not mask is None:
             masks_by_size_flat = [flatten_01(_m) for _m in masks_by_size]       
             preds_by_size_flat = [self.layer.call(_x, mask = _m)\
                     for _x, _m in zip(samples_by_size_flat, masks_by_size_flat)]
         
         else:
             preds_by_size_flat = [self.layer.call(_x) for _x in samples_by_size_flat]
+       
         
         # [(batchsize * samples, output...)]
         preds_by_size = [K.reshape(_p, K.concatenate([K.shape(inputs)[:1], minus_one, K.shape(_p)[1:]], axis = 0)) \
@@ -45,6 +54,7 @@ class LIME(ExplanationLayer):
         preds = K.reshape(preds, K.concatenate([preds_shape[:2], minus_one], axis = 0))
         binary = K.concatenate(binaries_by_size, axis = 1)
         # (batchsize, samples, timesteps)
+
 
         def solve(idx):
             squared_matrix = K.dot(binary[idx], K.transpose(binary[idx]))
@@ -61,7 +71,7 @@ class LIME(ExplanationLayer):
         return self._finalize(weights, inputs)
 
 class StandardLIME(LIME):
-    def __init__(self, layer, samples, size, axis, **kwargs):
+    def __init__(self, layer, samples, axis, size = 6, **kwargs):
         super(StandardLIME, self).__init__(layer, samples, **kwargs)
         self.axis = axis
         self.size = size
@@ -77,6 +87,7 @@ class StandardLIME(LIME):
         
         inputs_padded = self._pad(inputs) 
         inputs_perm = K.permute_dimensions(inputs_padded, pattern)
+        int_shape = K.int_shape(inputs)
 
         if mask and self.axis <= 1:
             mask_padded = self._pad(mask)
@@ -93,9 +104,12 @@ class StandardLIME(LIME):
         def sample_sample(pos):
             tmp = K.gather(inputs_perm, pos)
             return K.permute_dimensions(tmp, pattern)
-            
+           
         samples = K.map_fn(sample_sample, positions, dtype = K.dtype(inputs))
         samples = [K.permute_dimensions(samples, [1,0] + list(range(2, K.ndim(samples))))]
+        
+        samples[0]._keras_shape = (None, None, self.size) + int_shape[2:]
+        samples[0]._uses_learning_phase = inputs._uses_learning_phase
 
         def sample_binary(positions):
             tmp = K.one_hot(positions, timesteps)
@@ -105,8 +119,6 @@ class StandardLIME(LIME):
             tmp = K.tile(tmp, (batchsize,) + tuple([1] * (K.ndim(tmp)-1)))
             # (batchsize, timesteps) 
             return tmp
-
-
         
         binaries = K.map_fn(sample_binary, positions, dtype = K.dtype(inputs))
         # (samples, batchsize, timesteps)
@@ -127,7 +139,7 @@ class StandardLIME(LIME):
 
         
 class LIMSSE(LIME):
-    def __init__(self, layer, samples, low=1, high=8, **kwargs):
+    def __init__(self, layer, samples, low=2, high=8, **kwargs):
         super(LIMSSE, self).__init__(layer, samples, **kwargs)
         if low < 1 or high <= low:
             raise Exception("0 < low < high")
@@ -141,7 +153,7 @@ class LIMSSE(LIME):
     def _pad(self, x):
         padding_length = K.max(K.stack([self.high - K.shape(x)[1], 0], axis = 0))
         padding_shape = K.concatenate([K.stack([K.shape(x)[0], padding_length], 0), K.shape(x)[2:]], 0)
-        return K.concatenate([x, K.zeros(padding_shape)], axis = 1)
+        return K.concatenate([x, K.zeros(padding_shape, dtype = K.dtype(x))], axis = 1)
 
     def _finalize(self, weights, inputs):
         return weights[:,:K.shape(inputs)[1]]
@@ -153,11 +165,12 @@ class LIMSSE(LIME):
         masks_by_size = []
     
         inputs_padded = self._pad(inputs)
-        if mask:
+        if not mask is None:
             mask_padded = self._pad(mask)
         
         batchsize = K.shape(inputs_padded)[0]
         timesteps = K.shape(inputs_padded)[1]
+        int_shape = K.int_shape(inputs)
         
         def sample_length(_):
             return K.random_uniform(shape = (1,), minval=self.low, maxval=self.high, dtype = "int32")
@@ -181,6 +194,8 @@ class LIMSSE(LIME):
             substrings = K.map_fn(sample_substring, starts, dtype = K.dtype(inputs))
             # (samples, batchsize, length, ...)
             substrings = K.permute_dimensions(substrings, [1,0] + list(range(2, K.ndim(substrings))))
+            substrings._keras_shape = (None, None, length) + int_shape[2:]
+            substrings._uses_learning_phase = inputs._uses_learning_phase
             substrings_by_size.append(substrings)
 
             def sample_binary(start):
@@ -195,7 +210,7 @@ class LIMSSE(LIME):
             # (batchsize, samples, timesteps)
             binaries_by_size.append(binaries)
 
-            if mask:
+            if not mask is None:
                 def sample_submask(start):
                     return mask_padded[:,start:start+length]
 

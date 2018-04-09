@@ -2,7 +2,7 @@ import keras.backend as K
 from explanation_layers import ExplanationLayer
 
 class InputPerturbation(ExplanationLayer):
-    def __init__(self, layer, size = 1, axis = 1, **kwargs):
+    def __init__(self, layer, size = 1, mode = "minus", axis = 1, **kwargs):
         super(InputPerturbation, self).__init__(layer, **kwargs)
 
         if size < 1:
@@ -10,6 +10,7 @@ class InputPerturbation(ExplanationLayer):
 
         self.size = size
         self.axis = axis
+        self.mode = mode
 
 class InputPerturbation1D(InputPerturbation):
     def compute_output_shape(self, input_shape):
@@ -26,18 +27,17 @@ class InputPerturbation1D(InputPerturbation):
         int_shape = K.int_shape(inputs)
         timesteps = K.expand_dims(K.expand_dims(K.arange(0, K.shape(inputs)[self.axis]-self.size+1), -1), 0)
 
-        if int_shape[1]:
+        if int_shape[0] or (int_shape[0] is None and hasattr(self.layer, "unroll") and self.layer.unroll):
             def _step(_, states):
                 start = states[0]
                 _inputs = self._perturb(inputs, start)
                 if mask is None:
-                    return self.layer.call(_inputs)
+                    return self.layer.call(_inputs), [start+1]
                 _mask = self._perturb_mask(mask, start)
-                return self.layer.call(_inputs, _mask)
-
+                return self.layer.call(_inputs, _mask), [start+1]
        
             _, output, _ = K.rnn(_step, timesteps, initial_states = [0])
-        
+
         else:
             def _step(_, states):
                 [start, is_mask] = states
@@ -46,6 +46,7 @@ class InputPerturbation1D(InputPerturbation):
                 return self._perturb(inputs, start), [start+1]
 
             _, _inputs, _ = K.rnn(_step, timesteps, initial_states = [0], constants = [False])
+            
             # batchsize, timesteps - size + 1, _timesteps, [input_shape]
             # omission: _timesteps = timesteps - size
             # occlusion: _timesteps = timesteps
@@ -67,13 +68,28 @@ class InputPerturbation1D(InputPerturbation):
                 # (batchsize * (timesteps - size + 1), [output_shape])
            
             output_shape = self.compute_output_shape(int_shape)
+            
             if output_shape[1] is None:
                 if output_shape[2] is None:
                     dummy_input = self._perturb(inputs, 0)
                     dummy_output = self.layer.call(dummy_input)
-                    return K.reshape(_output, (-1, shape[self.axis]-self.size+1, K.shape(dummy_output)[1]) + output_shape[3:])
-                return K.reshape(_output, (-1, shape[self.axis]-self.size+1) + output_shape[2:])
-            return K.reshape(_output, (-1,) + output_shape[1:])
+                    output = K.reshape(_output, (-1, shape[self.axis]-self.size+1, K.shape(dummy_output)[1]) + output_shape[3:])
+                else:
+                    output = K.reshape(_output, (-1, shape[self.axis]-self.size+1) + output_shape[2:])
+            else:
+                output = K.reshape(_output, (-1,) + output_shape[1:])
+
+
+            if self.mode:
+                if mask is None:
+                    orig_output = self.layer.call(inputs)
+                else:
+                    orig_output = self.layer.call(inputs, mask = mask)
+
+                orig_output = K.expand_dims(orig_output, 1)
+                if self.mode == "minus":
+                    return orig_output - output
+            return output
     
 class InputOmission1D(InputPerturbation1D):
     def __init__(self, layer, size=1, **kwargs):
@@ -105,7 +121,7 @@ class InputOmission1D(InputPerturbation1D):
     
     def _compute_input_shape_int(self, input_shape):
         if input_shape[self.axis]:
-            return tuple([_shape[i] if i != self.axis else _shape[i] - self.size for i in range(len(_shape))])
+            return tuple([input_shape[i] if i != self.axis else input_shape[i] - self.size + 1 for i in range(len(input_shape))])
         return input_shape
     
     def _compute_input_shape(self, input_shape):
