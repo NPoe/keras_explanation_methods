@@ -12,9 +12,9 @@ import unittest
 
 class Test_on_Model(unittest.TestCase):
     """
-    This test case trains a simple model that returns 1 when an input contains the symbol
-    TARGET and 0 otherwise. Tests ensure that when presented with a sequence that contains
-    TARGET, explanation methods place maximum relevance there.
+    This test case trains a simple model to return True when an input contains the symbol
+    TARGET and False otherwise. Tests check whether explanation methods subsequently
+    place maximum relevance on TARGET.
     """
     
     TARGET = 25
@@ -122,6 +122,10 @@ class Test_on_Model(unittest.TestCase):
 
 
 class Test_Unittests(unittest.TestCase):
+    """
+    Output shape tests as well as miscellaneous unit tests.
+    """
+    
     EMB_SIZE = 9
     HIDDEN_SIZE = 3
 
@@ -146,8 +150,6 @@ class Test_Unittests(unittest.TestCase):
         cls.lstm_seq = Sequential([cls.lstm])
         cls.gru_seq = Sequential([cls.gru])
 
-
-
     def _test_shape(self, expmodel, shape):
         out = expmodel.predict(self.input)
         self.assertEqual(out.shape, shape)
@@ -155,6 +157,7 @@ class Test_Unittests(unittest.TestCase):
     def test_limsse_shape(self):
         for layer in (self.lstm, self.gru, self.conv_pool_seq):
             for emb in (self.emb, self.emb_masking):
+                # keras conv1D does not support masking
                 if emb == self.emb_masking and layer == self.conv_pool_seq:
                     continue
 
@@ -165,6 +168,7 @@ class Test_Unittests(unittest.TestCase):
     def test_lime_shape(self):
         for layer in (self.lstm, self.gru, self.conv_pool_seq):
             for emb in (self.emb, self.emb_masking):
+                # keras conv1D does not support masking
                 if emb == self.emb_masking and layer == self.conv_pool_seq:
                     continue
                 inner_model = Sequential([emb, layer])
@@ -174,6 +178,7 @@ class Test_Unittests(unittest.TestCase):
     def test_omit_shape(self):
         for layer in (self.lstm, self.gru, self.conv_pool_seq):
             for emb in (self.emb, self.emb_masking):
+                # keras conv1D does not support masking
                 if emb == self.emb_masking and layer == self.conv_pool_seq:
                     continue
                 for size in (1,2):
@@ -183,6 +188,7 @@ class Test_Unittests(unittest.TestCase):
     def test_occ_shape(self):
         for layer in (self.lstm, self.gru, self.conv_pool_seq):
             for emb in (self.emb, self.emb_masking):
+                # keras conv1D does not support masking
                 if emb == self.emb_masking and layer == self.conv_pool_seq:
                     continue
                 for size in (1,2):
@@ -223,12 +229,15 @@ class Test_Unittests(unittest.TestCase):
                 model = Sequential([self.emb, InputOmission1D(layer, size = size)])
                 out = model.predict(self.input)
 
-                emb_model = Sequential([self.emb])
-                layer_model = Sequential([layer])
+                omit_layer = Lambda(lambda x:x[:,size:], 
+                        output_shape = lambda shape:shape if shape[1] is None else (shape[0], shape[1]-size+1) + shape[2:])
 
-                orig_out = layer_model.predict(emb_model.predict(self.input))
-                perturb_out = layer_model.predict(emb_model.predict(self.input)[:,size:])
-                self.assertTrue(np.allclose(out[:,0], orig_out - perturb_out))
+                model_with = Sequential([self.emb, omit_layer, layer])
+                model_without = Sequential([self.emb, layer])
+                
+                orig_out = model_without.predict(self.input)
+                perturbed_out = model_with.predict(self.input)
+                self.assertTrue(np.allclose(out[:,0], orig_out - perturbed_out))
     
     def test_occ(self):
         for layer in (self.lstm_seq, self.gru_seq, self.conv_pool_seq,):
@@ -236,20 +245,20 @@ class Test_Unittests(unittest.TestCase):
                 for axis in (1,2):
                     model = Sequential([self.emb, InputOcclusion1D(layer, size = size, axis = axis)])
                     out = model.predict(self.input)
-
-                    emb_model = Sequential([self.emb])
-                    layer_model = Sequential([layer])
-
-                    orig_out = layer_model.predict(emb_model.predict(self.input))
-                    tmp = emb_model.predict(self.input)
-                    
+                
                     if axis == 1:
-                        tmp[:,:size] = 0
+                        occ_layer = Lambda(lambda x:K.concatenate([x[:,:size] * 0, x[:,size:]], axis = 1), 
+                                output_shape = lambda shape:shape)
                     else:
-                        tmp[:,:,:size] = 0
+                        occ_layer = Lambda(lambda x:K.concatenate([x[:,:,:size] * 0, x[:,:,size:]], axis = 2), 
+                                output_shape = lambda shape:shape)
 
-                    perturb_out = layer_model.predict(tmp)
-                    self.assertTrue(np.allclose(out[:,0], orig_out - perturb_out))
+                    model_with = Sequential([self.emb, occ_layer, layer])
+                    model_without = Sequential([self.emb, layer])
+                
+                    orig_out = model_without.predict(self.input)
+                    perturbed_out = model_with.predict(self.input)
+                    self.assertTrue(np.allclose(out[:,0], orig_out - perturbed_out))
 
 
 
