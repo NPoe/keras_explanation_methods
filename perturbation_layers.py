@@ -92,7 +92,7 @@ class InputPerturbation1D(InputPerturbation):
             return output
     
 class InputOmission1D(InputPerturbation1D):
-    """Input Omission layer.
+    """Input Omission layer -- Kadar et al. 2017
 
     This layer deletes, one at a time, n-grams from the time axis (axis 1)
     and calculates the resulting output. The output shape is
@@ -140,7 +140,7 @@ class InputOmission1D(InputPerturbation1D):
         return K.switch(cond, input_shape - self.size, input_shape)
 
 class InputOcclusion1D(InputPerturbation1D):
-    """1D Input Occlusion layer.
+    """1D Input Occlusion layer -- Zeiler et al. 2014
 
     This layer occludes, one at a time, n-grams from the specified axis with all-zero
     masks and calculates the resulting output. The output shape is
