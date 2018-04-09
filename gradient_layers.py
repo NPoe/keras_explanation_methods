@@ -2,6 +2,24 @@ import keras.backend as K
 from explanation_layers import ExplanationLayer
 
 class InputGradient(ExplanationLayer):
+    """Gradients of output w.r.t. input -- Simonyan et al. 2013
+
+    This layer wraps around a layer L with input shape I (ignoring batch size) and output 
+    shape O (ignoring batch size). It returns a tensor of shape (batch size,) | I | O, 
+    where every element is a partial derivative of an output with respect to an input.
+    For instance: I (batch_size, timesteps, embedding_dim) and O (batch_size, classes)
+    gives gradient output shape (batch_size, timesteps, embedding_dim, classes).
+    
+    # Arguments
+        layer: wrapped layer
+    
+    # Known issues: 
+        The gradient layer does not work on RNNs that are not unrolled, due to an issue
+        with nested while loops in tensorflow. Even when RNNs are unrolled, the gradient
+        propagation is very slow. In this case, consider a Lambda layer to select
+        the relevant output before applying the gradients.
+    """
+
     def __init__(self, layer, **kwargs):
         super(InputGradient, self).__init__(layer, **kwargs)
 
@@ -46,7 +64,22 @@ class InputGradient(ExplanationLayer):
 
 
 class InputGradientIntegrated(InputGradient):
-    def __init__(self, layer, intervals, **kwargs):
+    """Integrated gradients of output w.r.t. input -- Sundararajan et al. 2017.
+    
+    The integrated gradient layer calculates gradients on an interpolation ``path''
+    between an all-zero input and the actual input. This helps against the small
+    gradient problem in cases where inputs are saturating a non-linearity.
+
+    # Arguments
+        layer: wrapped layer
+        intervals: number of steps on the interpolation path. The larger this value,
+        the closer the result will be to the true integral.
+    
+    # Known issues: 
+        See InputGradient layer.
+    """
+
+    def __init__(self, layer, intervals = 20, **kwargs):
         super(InputGradientIntegrated, self).__init__(layer, **kwargs)
         if intervals < 1:
             raise Exception("intervals must be > 0")
@@ -61,7 +94,23 @@ class InputGradientIntegrated(InputGradient):
         return self._finalize(inputs, output / self.intervals)
 
 class InputGradientNoisy(InputGradient):
-    def __init__(self, layer, noise_ratio, samples, **kwargs):
+    """Noisy gradients of output w.r.t. input -- Smilkov et al. 2017.
+    
+    The noisy gradient layer adds Gaussian noise to the input and then calculates
+    the average gradient of the output with respect to the noisy input.
+    This is supposed to help against small-scale fluctuations in the space
+    immediately surrounding the input.
+
+    # Arguments
+        layer: wrapped layer
+        samples: number of samples to draw for a single input
+        noise_ratio: the std of the Gaussian noise is calculated as
+        (noise_ratio * [max(input) - min(input)])
+    
+    # Known issues: 
+        See InputGradient layer.
+    """
+    def __init__(self, layer, noise_ratio = 0.1, samples = 20, **kwargs):
         super(InputGradientNoisy, self).__init__(layer, **kwargs)
         self.noise_ratio = noise_ratio
         self.samples = samples

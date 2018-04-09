@@ -19,7 +19,7 @@ class LIME(ExplanationLayer):
         # [(batchsize, samples, timesteps, ...)]
         samples_by_size, binaries_by_size, masks_by_size = self._sample(inputs, mask)
         minus_one = (-1) * K.ones((1,), dtype = K.dtype(K.shape(inputs)))
-
+        
         def flatten_01(x):
             tmp = K.reshape(x, K.concatenate([minus_one, K.shape(x)[2:]]))
             shape = K.int_shape(x)
@@ -33,7 +33,6 @@ class LIME(ExplanationLayer):
         samples_by_size_flat = [flatten_01(_x) for _x in samples_by_size]
         # (batchsize * samples, timesteps...)
         
-
         if not mask is None:
             masks_by_size_flat = [flatten_01(_m) for _m in masks_by_size]       
             preds_by_size_flat = [self.layer.call(_x, mask = _m)\
@@ -71,7 +70,19 @@ class LIME(ExplanationLayer):
         return self._finalize(weights, inputs)
 
 class StandardLIME(LIME):
-    def __init__(self, layer, samples, axis, size = 6, **kwargs):
+    """Standard subsampling LIME layer -- Ribeiro et al. 2016
+
+    This layer samples bags-of-features from the input along the specified axis. The samples
+    are fed to the original layer to receive predictions. A linear model is fitted (closed-form)
+    to give the same predictions as the original layer.
+    
+    # Arguments
+        layer: wrapped layer
+        samples: number of samples to draw for every input
+        axis: axis to draw from
+        size: length of sample
+    """
+    def __init__(self, layer, axis, samples=50, size = 6, **kwargs):
         super(StandardLIME, self).__init__(layer, samples, **kwargs)
         self.axis = axis
         self.size = size
@@ -139,7 +150,19 @@ class StandardLIME(LIME):
 
         
 class LIMSSE(LIME):
-    def __init__(self, layer, samples, low=2, high=8, **kwargs):
+    """LIMSSE layer.
+
+    This layer samples subsequences from the input along the time axis (axis 1). The samples
+    are fed to the original layer to receive predictions. A linear model is fitted (closed-form)
+    to give the same predictions as the original layer.
+    
+    # Arguments
+        layer: wrapped layer
+        samples: number of samples to draw for every input
+        low: minimum substring length
+        high: maximum substring length
+    """
+    def __init__(self, layer, samples=50, low=2, high=6, **kwargs):
         super(LIMSSE, self).__init__(layer, samples, **kwargs)
         if low < 1 or high <= low:
             raise Exception("0 < low < high")

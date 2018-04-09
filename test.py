@@ -69,11 +69,11 @@ class Test_on_Model(unittest.TestCase):
         self.assertEqual(prediction.argmax(), self.position)
 
     def test_limsse_on_model(self):
-        limsse = LIMSSE(self.primary, samples = 100, input_shape = (None,))
+        limsse = LIMSSE(self.primary, input_shape = (None,))
         self._test_expmodel(Sequential([limsse]))
 
     def test_lime_on_model(self):
-        lime = StandardLIME(self.primary, samples = 100, axis = 1, input_shape = (None,))
+        lime = StandardLIME(self.primary, axis = 1, input_shape = (None,))
         self._test_expmodel(Sequential([lime]))
     
     def test_omit_on_model(self):
@@ -162,7 +162,7 @@ class Test_Unittests(unittest.TestCase):
                     continue
 
                 inner_model = Sequential([emb, layer])
-                limsse = LIMSSE(inner_model, samples=20, input_shape = (None,))
+                limsse = LIMSSE(inner_model, input_shape = (None,))
                 self._test_shape(Sequential([limsse]), (self.BATCH_SIZE, self.TIMESTEPS, self.HIDDEN_SIZE))
     
     def test_lime_shape(self):
@@ -174,6 +174,7 @@ class Test_Unittests(unittest.TestCase):
                 inner_model = Sequential([emb, layer])
                 lime = StandardLIME(inner_model, samples=20, axis = 1, input_shape = (None,))
                 self._test_shape(Sequential([lime]), (self.BATCH_SIZE, self.TIMESTEPS, self.HIDDEN_SIZE))
+
     
     def test_omit_shape(self):
         for layer in (self.lstm, self.gru, self.conv_pool_seq):

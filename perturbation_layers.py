@@ -92,6 +92,17 @@ class InputPerturbation1D(InputPerturbation):
             return output
     
 class InputOmission1D(InputPerturbation1D):
+    """Input Omission layer.
+
+    This layer deletes, one at a time, n-grams from the time axis (axis 1)
+    and calculates the resulting output. The output shape is
+    (batch size, timesteps - size + 1, ...), where size is the n-gram length
+    and ... stands for the dimensions of the output, without batch size.
+    
+    # Arguments
+        layer: wrapped layer
+        size: n-gram length
+    """
     def __init__(self, layer, size=1, **kwargs):
         super(InputOmission1D, self).__init__(layer, size, axis=1, **kwargs)
 
@@ -129,6 +140,18 @@ class InputOmission1D(InputPerturbation1D):
         return K.switch(cond, input_shape - self.size, input_shape)
 
 class InputOcclusion1D(InputPerturbation1D):
+    """1D Input Occlusion layer.
+
+    This layer occludes, one at a time, n-grams from the specified axis with all-zero
+    masks and calculates the resulting output. The output shape is
+    (batch size, timesteps - size + 1, ...), where size is the n-gram length
+    and ... stands for the dimensions of the output, without batch size.
+    
+    # Arguments
+        layer: wrapped layer
+        size: n-gram length
+        axis: axis to occlude over
+    """
     def _perturb_mask(self, mask, start):
         return mask
 
