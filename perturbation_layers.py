@@ -18,7 +18,7 @@ class InputPerturbation(ExplanationLayer):
 
 class InputPerturbation1D(InputPerturbation):
     def compute_output_shape(self, input_shape):
-        if input_shape[self.axis] == None:
+        if input_shape[self.axis] is None:
             x = None
         else:
             x = input_shape[self.axis] - self.size + 1
