@@ -15,6 +15,8 @@ class InputPerturbation(ExplanationLayer):
         self.axis = axis
         self.mode = mode
 
+    def call(self, inputs, mask = None):
+            raise NotImplementedError()
 
 class InputPerturbation1D(InputPerturbation):
     def compute_output_shape(self, input_shape):
@@ -31,7 +33,18 @@ class InputPerturbation1D(InputPerturbation):
         int_shape = K.int_shape(inputs)
         timesteps = K.expand_dims(K.expand_dims(K.arange(0, K.shape(inputs)[self.axis]-self.size+1), -1), 0)
 
-        if int_shape[0] or (int_shape[0] is None and hasattr(self.layer, "unroll") and self.layer.unroll):
+        can_flatten = True
+
+        if int_shape[0]:
+            can_flatten = False
+        
+        if hasattr(self.layer, "unroll") and self.layer.unroll:
+            can_flatten = False
+        
+        if len(int_shape) < 3:
+            can_flatten = False
+        
+        if not can_flatten:
             def _step(_, states):
                 start = states[0]
                 _inputs = self._perturb(inputs, start)
