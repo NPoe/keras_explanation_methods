@@ -97,18 +97,18 @@ class InputPerturbation1D(InputPerturbation):
                 output = K.reshape(_output, (-1,) + output_shape[1:])
 
 
-            if self.mode:
-                if mask is None:
-                    orig_output = self.layer.call(inputs)
-                else:
-                    orig_output = self.layer.call(inputs, mask = mask)
+        if self.mode:
+            if mask is None:
+                orig_output = self.layer.call(inputs)
+            else:
+                orig_output = self.layer.call(inputs, mask = mask)
 
-                orig_output = K.expand_dims(orig_output, 1)
-                if self.mode == "minus":
-                    return orig_output - output
-                elif self.mode == "ratio":
-                    return orig_output / output
-            return output
+            orig_output = K.expand_dims(orig_output, 1)
+            if self.mode == "minus":
+                return orig_output - output
+            elif self.mode == "ratio":
+                return orig_output / output
+        return output
     
 class InputOmission1D(InputPerturbation1D):
     """Input Omission layer -- Kadar et al. 2017
