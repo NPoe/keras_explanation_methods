@@ -10,6 +10,102 @@ from perturbation_layers import *
 
 import unittest
 
+class Test_Relevance_Inhibition(unittest.TestCase):
+    
+    TARGET = 5
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pre_build_layers()
+
+    @classmethod
+    def pre_build_layers(cls):
+        cls.inp = Input((cls.TARGET,))
+        
+        cls.emb = Embedding(input_dim = cls.TARGET*2, output_dim = 4, input_shape = (cls.TARGET,))
+        cls.conv = Conv1D(filters = 5, kernel_size = 3, padding="same", input_shape = (None, 4))
+        cls.pooling = GlobalAveragePooling1D()
+        cls.dense = Dense(units=1)
+        cls.pred = Activation("sigmoid", name = "pred")
+        cls.exp_pred = Activation("sigmoid", name = "exp")
+        
+        cls.dot = Lambda(lambda l: K.sum(K.expand_dims(l[0],-1) * l[1], axis = 2))
+
+        cls.l1norm = Lambda(lambda x: K.sum(K.abs(x), axis = 2))
+        cls.l2norm = Lambda(lambda x: K.sqrt(K.sum(K.square(x), axis = 2)))
+        
+        cls.primary = Sequential([cls.emb, cls.conv, cls.pooling, cls.dense])
+        cls.primary_no_emb = Sequential([cls.conv, cls.pooling, cls.dense])
+
+        cls.simple_gradient = InputGradient(cls.primary_no_emb, input_shape = (None,))
+        cls.integrated_gradient = InputGradientIntegrated(cls.primary_no_emb, intervals = 10, input_shape = (None,))
+        cls.noisy_gradient = InputGradientNoisy(cls.primary_no_emb, samples = 10, noise_ratio = 0.1, input_shape = (None,))
+    
+        cls.out1 = cls.pred(cls.primary(cls.inp))
+
+    def _test_reaction(self, exp):
+
+        model = Model([self.inp], [self.out1, self.exp_pred(exp)])
+
+        model.compile(\
+                loss = {"pred": "binary_crossentropy", "exp": "binary_crossentropy"},
+                metrics = {"pred": "accuracy"},
+                sample_weight_mode = {"pred": None, "exp": "temporal"},
+                optimizer = "adam")
+
+        def generator(strength):
+            while True:
+                X = np.random.randint(self.TARGET*2, size = (8, self.TARGET))
+                Y = (X == self.TARGET).sum(axis = -1, keepdims = True).clip(0,1)
+                Y_rel = np.expand_dims(np.zeros_like(X),-1)
+
+                W = (X == self.TARGET) * strength + np.finfo(float).eps
+                yield([X], [Y, Y_rel], [None, W])
+
+
+        initial_weights = model.get_weights()
+        for strength in (0.0, 10, 1000):
+            model.set_weights(initial_weights)
+            gen = generator(strength)
+            history = model.fit_generator(gen, steps_per_epoch = 500, epochs = 1, verbose = 0)
+            loss = history.history["pred_loss"][0]
+            
+            if strength > 0.0:
+                self.assertGreater(loss, last_loss)
+            
+            last_loss = loss
+
+        model.set_weights(initial_weights)
+
+    def test_inhibition_limsse(self):
+        exp = LIMSSE(self.primary)(self.inp)
+        self._test_reaction(exp)
+    
+    def test_inhibition_lime(self):
+        exp = StandardLIME(self.primary, axis = 1)(self.inp)
+        self._test_reaction(exp)
+    
+    def test_inhibition_omit(self):
+        exp = InputOmission1D(self.primary, size = 1, mode = "minus")(self.inp)
+        self._test_reaction(exp)
+    
+    def test_inhibition_occ(self):
+        exp = InputOcclusion1D(self.primary, size = 1, axis = 1, mode = "minus")(self.inp)
+        self._test_reaction(exp)
+    
+    def test_inhibition_grad_simple_dot(self):
+        exp = self.dot([self.emb(self.inp), self.simple_gradient(self.emb(self.inp))])
+        self._test_reaction(exp)
+    
+    def test_inhibition_grad_integ_dot(self):
+        exp = self.dot([self.emb(self.inp), self.integrated_gradient(self.emb(self.inp))])
+        self._test_reaction(exp)
+    
+    def test_inhibition_grad_noisy_dot(self):
+        exp = self.dot([self.emb(self.inp), self.noisy_gradient(self.emb(self.inp))])
+        self._test_reaction(exp)
+    
+
 class Test_on_Model(unittest.TestCase):
     """
     This test case trains a simple model to return True when an input contains the symbol
@@ -50,9 +146,9 @@ class Test_on_Model(unittest.TestCase):
         
         cls.l1norm = Lambda(lambda x: K.sum(K.abs(x), axis = 2))
         cls.l2norm = Lambda(lambda x: K.sqrt(K.sum(K.square(x), axis = 2)))
+        cls.dot = Lambda(lambda l: K.sum(K.expand_dims(l[0],-1) * l[1], axis = 2))
 
         cls.inp = Input((None,))
-        cls.dot = Dot(2)
         
         cls.simple_gradient = InputGradient(cls.primary_no_emb, input_shape = (None,))
         cls.integrated_gradient = InputGradientIntegrated(cls.primary_no_emb, intervals = 10, input_shape = (None,))
@@ -265,3 +361,5 @@ class Test_Unittests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
